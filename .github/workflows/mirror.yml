@@ -1,0 +1,61 @@
+name: X Mirror
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # her 10 dakikada bir (GitHub bazen birkaç dakika geciktirir)
+  workflow_dispatch:          # Actions sekmesinden elle çalıştırmak için
+
+permissions:
+  contents: write             # state.json dosyasını depoya geri yazabilmek için
+
+concurrency:
+  group: x-mirror
+  cancel-in-progress: false   # iki çalışma aynı anda olmasın, aynı gönderi iki kez paylaşılmasın
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('package-lock.json') }}
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Gönderileri aynala
+        run: node mirror.mjs
+        env:
+          X_AUTH: ${{ secrets.X_AUTH }}
+          SOURCE_USERNAME: ${{ vars.SOURCE_USERNAME }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+
+      - name: Hata ekran görüntülerini sakla
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekran-goruntuleri
+          path: debug/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: İlerlemeyi kaydet
+        if: always()
+        run: |
+          if [ -f state.json ]; then git add state.json; fi
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "x-mirror-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "state güncellendi"
+          git pull --rebase
+          git push
