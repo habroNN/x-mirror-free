@@ -57,19 +57,27 @@ const isLoginPage = url => /\/(login|i\/flow\/login|logout)/.test(url);
 const SESSION_HELP = 'X oturumu düşmüş. Bilgisayarında "npm run login" çalıştır ve GitHub\'daki X_AUTH secret\'ını yeni değerle güncelle.';
 
 async function readTimeline(page) {
-  const waitFor = name => page
-    .waitForResponse(r => r.url().includes(`/${name}?`) && r.ok(), { timeout: 60_000 })
+  const waitFor = pattern => page
+    .waitForResponse(r => pattern.test(r.url()) && r.ok(), { timeout: 60_000 })
     .then(r => r.json())
     .catch(() => null);
-  const user = waitFor('UserByScreenName');
-  const tweets = waitFor('UserTweets');
+  const user = waitFor(/\/UserByScreenName\?/);
+  // X profil gönderilerini eskiden UserTweets ile, Kasım 2026'dan beri UserOriginalsTimeline ile yüklüyor
+  const tweets = waitFor(/\/User(Tweets|OriginalsTimeline)\?/);
+  // Hata olursa kayda yazmak için X'in arka planda yaptığı isteklerin adı ve durum kodu
+  const seen = [];
+  const onResponse = r => { if (r.url().includes('/graphql/')) seen.push(`${r.url().split('?')[0].split('/').pop()} ${r.status()}`); };
+  page.on('response', onResponse);
 
   await page.goto(`https://x.com/${SOURCE}`, { waitUntil: 'domcontentloaded' });
   const [userJson, tweetsJson] = await Promise.all([user, tweets]);
+  page.off('response', onResponse);
 
   if (isLoginPage(page.url())) throw new Error(SESSION_HELP);
   if (!tweetsJson) {
     await screenshot(page, 'profil');
+    console.log(`Sayfa: ${page.url()}\nX istekleri: ${seen.join(', ') || 'hiç yok'}`);
+    console.log(`Sayfadaki yazı: ${(await page.locator('body').innerText().catch(() => '')).slice(0, 500).replace(/\s+/g, ' ')}`);
     throw new Error(`@${SOURCE} profilindeki gönderiler yüklenemedi (debug/profil.png ekran görüntüsüne bak).`);
   }
   return { userJson, tweetsJson };
