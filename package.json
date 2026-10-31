@@ -1,0 +1,13 @@
+{
+  "name": "x-mirror-free",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "login": "node login.mjs",
+    "start": "node mirror.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
